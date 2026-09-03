@@ -20,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import bf.anptic.geoportail.dto.SiteStatutSimpleDto;
+import bf.anptic.geoportail.model.enums.NodeStatus;
 
 import java.util.List;
 import java.util.Set;
@@ -113,7 +114,11 @@ public class SiteController {
                         s.longitude(),
                         // WARN → KO (probleme), UNKNOWN → KO (pas de signal = pas bon)
                         // seul OK reste OK
-                        "OK".equals(s.statutGlobal()) ? "OK" : "KO"
+                        // BUG CORRIGE : statutGlobal() renvoie l'enum NodeStatus, pas un
+                        // String - "OK".equals(enum) est TOUJOURS false quel que soit le
+                        // statut reel, ce qui forcait tous les sites en KO. Il faut
+                        // comparer l'enum a l'enum, pas a une chaine.
+                        s.statutGlobal() == NodeStatus.OK ? "OK" : "KO"
                 ))
                 .toList();
     }

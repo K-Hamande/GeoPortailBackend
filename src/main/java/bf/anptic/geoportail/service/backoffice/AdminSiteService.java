@@ -189,7 +189,8 @@ public class AdminSiteService {
     private SiteAdminResponse toSiteResponse(Site site) {
         int nombreEquipements = (int) equipmentRepository.countBySite_SiteId(site.getSiteId());
         return new SiteAdminResponse(
-                site.getSiteId(), site.getNom(), site.getVille(), site.getRegionAdministrative(), site.getBatiment(),
+                site.getSiteId(), site.getNom(), site.getVille(), site.getProvince(), site.getRegionAdministrative(),
+                site.getMinistere(), site.getBatiment(),
                 site.getLatitude(), site.getLongitude(), site.getContactDsiNom(), site.getContactDsiTelephone(),
                 site.getContactDsiEmail(), site.getNetxmsNodeId(), site.getNiveaux(), nombreEquipements, site.getActif()
         );
