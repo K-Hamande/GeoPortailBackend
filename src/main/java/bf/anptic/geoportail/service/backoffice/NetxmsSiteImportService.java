@@ -17,21 +17,26 @@ public class NetxmsSiteImportService {
 
     private static final Logger log = LoggerFactory.getLogger(NetxmsSiteImportService.class);
 
+    // Passe par les vues applicatives v_siteadministratif / v_ville /
+    // v_limitecommune / v_limiteprovince / v_limiteregion (schema
+    // geoportail_vues) plutot que par les tables du schema donnebase
+    // directement - voir sql/geoportail_vues.sql. Memes colonnes, memes
+    // jointures : seul l'emplacement des donnees change.
     private static final String SELECT_SITES_RESINA = """
             SELECT sa.id_siteadministratif AS id,
                    sa.nomsiteadministratif AS nom,
                    sa.latitude             AS latitude,
                    sa.longitude            AS longitude,
                    sa.structure            AS structure,
-                   sa."Minist\u00E8re"     AS ministere,
+                   sa."Ministère"     AS ministere,
                    vi.nomville             AS nomville,
                    po.nomprovince          AS nomprovince,
                    re.nomregion            AS nomregion
-            FROM donnebase.siteadministratif sa
-            LEFT JOIN donnebase.ville vi ON sa.id_ville = vi.id_ville
-            LEFT JOIN donnebase.limitecommune co ON vi.id_commune = co.id_lcommune
-            LEFT JOIN donnebase.limiteprovince po ON co.id_lprovince = po.id_lprovince
-            LEFT JOIN donnebase.limiteregion re ON po.id_lregion = re.id_lregion
+            FROM geoportail_vues.v_siteadministratif sa
+            LEFT JOIN geoportail_vues.v_ville vi ON sa.id_ville = vi.id_ville
+            LEFT JOIN geoportail_vues.v_limitecommune co ON vi.id_commune = co.id_lcommune
+            LEFT JOIN geoportail_vues.v_limiteprovince po ON co.id_lprovince = po.id_lprovince
+            LEFT JOIN geoportail_vues.v_limiteregion re ON po.id_lregion = re.id_lregion
             WHERE sa.connectionresina = 'Oui'
             ORDER BY sa.id_siteadministratif
             """;

@@ -21,9 +21,12 @@ import java.util.*;
 @Service
 public class LanStatusService {
 
+    // Passe par la vue applicative v_object_properties (schema
+    // geoportail_vues) plutot que par la table interne NetXMS
+    // object_properties directement - voir sql/geoportail_vues.sql.
     private static final String SELECT_STATUTS = """
             SELECT object_id, status
-            FROM public.object_properties
+            FROM geoportail_vues.v_object_properties
             WHERE object_id IN (:ids)
             """;
 

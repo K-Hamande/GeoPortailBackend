@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 // Rejoue automatiquement, chaque nuit, les deux synchronisations qu'on
 // declenchait jusqu'ici a la main depuis le backoffice :
-//   1) les sites RESINA (donnebase.siteadministratif -> table sites)
+//   1) les sites RESINA (vue geoportail_vues.v_siteadministratif -> table sites)
 //   2) les equipements LAN (geo_equipement -> table equipments)
 // L'ordre est important : un site doit exister localement AVANT que ses
 // equipements puissent lui etre rattaches (sinon EquipmentSyncService les

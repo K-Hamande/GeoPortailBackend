@@ -30,11 +30,13 @@ public class SiteNetworkService {
             """;
 
     // geo_disponibilite n'a pas de colonne siteadmin_id : on filtre via la liste
-    // des object_id du site, obtenue par sous-requete sur object_properties.
+    // des object_id du site, obtenue par sous-requete sur la vue applicative
+    // v_object_properties (schema geoportail_vues) plutot que sur la table
+    // interne NetXMS object_properties directement - voir sql/geoportail_vues.sql.
     private static final String SELECT_DISPONIBILITE = """
             SELECT object_id, "pourcentage_disponibilité" AS pourcentage, nombre_incidents
             FROM public.geo_disponibilite
-            WHERE object_id IN (SELECT object_id FROM public.object_properties WHERE siteadmin_id = ?)
+            WHERE object_id IN (SELECT object_id FROM geoportail_vues.v_object_properties WHERE siteadmin_id = ?)
             """;
 
     private final SiteRepository siteRepository;
