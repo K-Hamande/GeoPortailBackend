@@ -1,5 +1,14 @@
 server:
   port: 8080
+  error:
+    # Sans ceci, Spring Boot masque le champ "message" des reponses
+    # d'erreur JSON par defaut (uniquement active en dev jusqu'ici, cf.
+    # application-dev.yml) - les messages precis renvoyes par le backend
+    # (ex: "Un compte avec ce login existe déjà.") n'atteignaient donc
+    # jamais l'utilisateur en production, qui ne voyait qu'un message
+    # generique. include-stacktrace reste volontairement dev-only
+    # (§4.4 du CDC : pas de detail d'implementation expose au client).
+    include-message: always
   tomcat:
     # §4.4 du CDC : journalisation des acces HTTP, conservee 90 jours
     # minimum. Le valve d'acces de Tomcat (embarque) ecrit un fichier par
