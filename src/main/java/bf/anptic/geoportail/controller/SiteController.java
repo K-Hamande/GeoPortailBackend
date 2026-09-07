@@ -16,6 +16,7 @@ import bf.anptic.geoportail.service.LanStatusService;
 import bf.anptic.geoportail.service.MapService;
 import bf.anptic.geoportail.service.NotificationService;
 import bf.anptic.geoportail.service.SiteNetworkService;
+import bf.anptic.geoportail.service.backoffice.AdminSupervisionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,6 +24,7 @@ import bf.anptic.geoportail.dto.SiteStatutSimpleDto;
 import bf.anptic.geoportail.model.enums.NodeStatus;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -37,6 +39,7 @@ public class SiteController {
     private final MapService mapService;
     private final SiteNetworkService siteNetworkService;
     private final IncidentService incidentService;
+    private final AdminSupervisionService supervisionService;
 
     public SiteController(SiteRepository siteRepository,
                            AnpticStatusService anpticStatusService,
@@ -44,7 +47,8 @@ public class SiteController {
                            NotificationService notificationService,
                            MapService mapService,
                            SiteNetworkService siteNetworkService,
-                           IncidentService incidentService) {
+                           IncidentService incidentService,
+                           AdminSupervisionService supervisionService) {
         this.siteRepository = siteRepository;
         this.anpticStatusService = anpticStatusService;
         this.lanStatusService = lanStatusService;
@@ -52,6 +56,7 @@ public class SiteController {
         this.mapService = mapService;
         this.siteNetworkService = siteNetworkService;
         this.incidentService = incidentService;
+        this.supervisionService = supervisionService;
     }
 
     @GetMapping("/sites")
@@ -61,8 +66,14 @@ public class SiteController {
                 ? siteRepository.findByActifTrue()
                 : siteRepository.findByActifTrueAndMinistere(ministere);
 
+        Map<String, Integer> intervalles = supervisionService.getIntervallesActualisation();
         return sites.stream()
-                .map(site -> new SiteSummaryDto(site.getSiteId(), site.getNom(), site.getVille()))
+                .map(site -> new SiteSummaryDto(
+                        site.getSiteId(),
+                        site.getNom(),
+                        site.getVille(),
+                        intervalles.getOrDefault(site.getSiteId(), AdminSupervisionService.DEFAUT_INTERVALLE_S)
+                ))
                 .toList();
     }
 

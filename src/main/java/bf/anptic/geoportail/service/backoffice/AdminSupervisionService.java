@@ -80,6 +80,33 @@ public class AdminSupervisionService {
         return toDto(site, saved);
     }
 
+    // Utilise cote DECIDEUR (SiteController#listSites) pour que le
+    // rafraichissement automatique respecte l'intervalle configure par
+    // site, sans exposer les autres reglages (seuils, notifications).
+    public Map<String, Integer> getIntervallesActualisation() {
+        Map<String, Integer> intervalles = new HashMap<>();
+        for (SiteSupervisionSettings s : settingsRepository.findAll()) {
+            if (s.getIntervalleActualisationS() != null) {
+                intervalles.put(s.getSiteId(), s.getIntervalleActualisationS());
+            }
+        }
+        return intervalles;
+    }
+
+    // Seuils d'alerte effectifs d'un site (defaut ou personnalises) -
+    // utilise par AnpticStatusService pour que la qualite affichee cote
+    // DECIDEUR reagisse reellement a ces reglages (§3.2.6b du CDC).
+    public record Seuils(double debitMinimalMbps, double latenceMaximaleMs) {}
+
+    public Seuils getSeuils(String siteId) {
+        return settingsRepository.findById(siteId)
+                .map(s -> new Seuils(
+                        s.getDebitMinimalMbps() != null ? s.getDebitMinimalMbps() : DEFAUT_DEBIT_MINIMAL_MBPS,
+                        s.getLatenceMaximaleMs() != null ? s.getLatenceMaximaleMs() : DEFAUT_LATENCE_MAXIMALE_MS
+                ))
+                .orElse(new Seuils(DEFAUT_DEBIT_MINIMAL_MBPS, DEFAUT_LATENCE_MAXIMALE_MS));
+    }
+
     public void resetToDefaults(String siteId, String auteur) {
         settingsRepository.deleteById(siteId);
         auditService.record(auteur, "Réinitialisation paramètres supervision", "site=" + siteId);

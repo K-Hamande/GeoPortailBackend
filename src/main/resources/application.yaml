@@ -1,5 +1,19 @@
 server:
   port: 8080
+  tomcat:
+    # §4.4 du CDC : journalisation des acces HTTP, conservee 90 jours
+    # minimum. Le valve d'acces de Tomcat (embarque) ecrit un fichier par
+    # jour et purge automatiquement, a chaque rotation, les fichiers plus
+    # vieux que max-days - pas de dependance ni de filtre applicatif
+    # supplementaire necessaire.
+    accesslog:
+      enabled: true
+      directory: logs/access
+      prefix: access_log
+      suffix: .log
+      pattern: '%h %l %u %t "%r" %s %b %D'
+      rotate: true
+      max-days: 90
 
 spring:
   application:

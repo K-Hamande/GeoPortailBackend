@@ -93,7 +93,13 @@ public class DecideurAuthService {
 
         user.setNomComplet(request.nomComplet());
         user.setEmail(request.email());
-        user.setRole(DecideurUser.Role.valueOf(request.role()));
+        // Le role n'est volontairement PAS modifiable ici : c'est une
+        // caracteristique fondamentale du compte (LAMBDA = vue globale
+        // simplifiee sans site/ministere, DECIDEUR = filtre par ministere).
+        // Le changer a posteriori contournerait la distinction voulue par
+        // le §3.1 du CDC. Cote frontend, le champ role est desactive des
+        // qu'on modifie un compte existant (DecideurUsersPage.jsx) ; ce
+        // controle cote backend empeche aussi un appel API direct.
         user.setMinistere(request.ministere());
         if (request.motDePasse() != null && !request.motDePasse().isBlank()) {
             user.setMotDePasseHash(ENCODER.encode(request.motDePasse()));

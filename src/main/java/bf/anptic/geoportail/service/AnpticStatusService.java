@@ -4,6 +4,7 @@ import bf.anptic.geoportail.dto.AnpticStatusDto;
 import bf.anptic.geoportail.model.Site;
 import bf.anptic.geoportail.model.enums.NodeStatus;
 import bf.anptic.geoportail.repository.SiteRepository;
+import bf.anptic.geoportail.service.backoffice.AdminSupervisionService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -59,15 +60,19 @@ public class AnpticStatusService {
 
     // Cibles KPI officielles (document metier NOC "Resume elements
     // pertinents pour l'exploitation quotidienne des agents NOC", KPI
-    // reseau) : disponibilite des liens >= 99%, latence moyenne <= 100ms,
-    // taux de perte de paquets <= 2%. L'utilisation de bande passante
-    // (<=80%) n'est volontairement pas incluse : la vitesse nominale
-    // disponible dans public.interfaces (colonne speed) reflete la
-    // vitesse negociee du port Ethernet, pas la capacite reelle des
-    // liens radio/satellite, et ne permet pas d'identifier de facon
-    // fiable quelle interface correspond au lien ANPTIC d'un site donne.
+    // reseau) : disponibilite des liens >= 99%, taux de perte de paquets
+    // <= 2%. Ces deux cibles sont fixes et non personnalisables par site.
+    // La latence maximale et le debit minimal acceptable, eux, sont des
+    // "seuils d'alerte" configurables par site (§3.2.6b du CDC, Backoffice
+    // > Supervision) - voir AdminSupervisionService.getSeuils, utilise
+    // plus bas a la place d'une constante globale. L'utilisation de bande
+    // passante (<=80%) n'est volontairement pas incluse dans le score :
+    // la vitesse nominale disponible dans public.interfaces (colonne
+    // speed) reflete la vitesse negociee du port Ethernet, pas la
+    // capacite reelle des liens radio/satellite, et ne permet pas
+    // d'identifier de facon fiable quelle interface correspond au lien
+    // ANPTIC d'un site donne.
     private static final double CIBLE_DISPONIBILITE_PCT = 99.0;
-    private static final double CIBLE_LATENCE_MS = 100.0;
     private static final double CIBLE_PERTE_PAQUETS_PCT = 2.0;
 
     private static final String SELECT_DISPONIBILITE_30J = """
@@ -97,11 +102,14 @@ public class AnpticStatusService {
 
     private final SiteRepository siteRepository;
     private final JdbcTemplate netxmsJdbcTemplate;
+    private final AdminSupervisionService supervisionService;
 
     public AnpticStatusService(SiteRepository siteRepository,
-                                @Qualifier("netxmsJdbcTemplate") JdbcTemplate netxmsJdbcTemplate) {
+                                @Qualifier("netxmsJdbcTemplate") JdbcTemplate netxmsJdbcTemplate,
+                                AdminSupervisionService supervisionService) {
         this.siteRepository = siteRepository;
         this.netxmsJdbcTemplate = netxmsJdbcTemplate;
+        this.supervisionService = supervisionService;
     }
 
     public AnpticStatusDto getAnpticStatus(String siteId) {
@@ -166,7 +174,9 @@ public class AnpticStatusService {
                 .stream().findFirst().orElse(new DisponibiliteRow(0L, null));
 
         if (disponible) {
-            QualiteReseau qualite = calculerQualite(dispo.pourcentage(), latenceMs, perteDePaquetsPct);
+            AdminSupervisionService.Seuils seuils = supervisionService.getSeuils(siteId);
+            QualiteReseau qualite = calculerQualite(dispo.pourcentage(), latenceMs, perteDePaquetsPct,
+                    debitMontant, debitDescendant, seuils);
             return new AnpticStatusDto(
                     siteId,
                     status,
@@ -205,14 +215,22 @@ public class AnpticStatusService {
     }
 
     // Score de qualite reseau, base sur les cibles KPI officielles du
-    // document metier NOC (voir constantes CIBLE_* ci-dessus). Chaque
+    // document metier NOC (voir constantes CIBLE_* ci-dessus) pour la
+    // disponibilite et la perte de paquets, et sur les seuils d'alerte
+    // configurables par site pour la latence (§3.2.6b du CDC). Chaque
     // critere disponible contribue un score de 0 a 1 (1 = cible
     // atteinte ou depassee, degradation lineaire jusqu'a 0 quand on est
     // deux fois pire que la cible), combine en moyenne ponderee. Un
     // critere absent (donnee non mesurable) est simplement exclu, sans
     // penaliser le score - la ponderation restante est renormalisee.
+    // Le debit minimal configure agit ensuite comme un plafond : un site
+    // sous ce seuil ne peut jamais remonter en "Excellente"/"Bonne",
+    // meme si les autres criteres sont favorables - un debit trop faible
+    // est un motif d'alerte a lui seul, independamment du score pondere.
     // Renvoie null si aucun critere n'est disponible.
-    private static QualiteReseau calculerQualite(Double disponibilite30j, Double latenceMs, Double perteDePaquetsPct) {
+    private static QualiteReseau calculerQualite(Double disponibilite30j, Double latenceMs, Double perteDePaquetsPct,
+                                                  Double debitMontantMbps, Double debitDescendantMbps,
+                                                  AdminSupervisionService.Seuils seuils) {
         double sommeScoresPonderes = 0.0;
         double sommePoids = 0.0;
 
@@ -222,9 +240,9 @@ public class AnpticStatusService {
             sommePoids += 0.40;
         }
         if (latenceMs != null) {
-            double score = latenceMs <= CIBLE_LATENCE_MS
+            double score = latenceMs <= seuils.latenceMaximaleMs()
                     ? 1.0
-                    : Math.max(0.0, 1.0 - (latenceMs - CIBLE_LATENCE_MS) / CIBLE_LATENCE_MS);
+                    : Math.max(0.0, 1.0 - (latenceMs - seuils.latenceMaximaleMs()) / seuils.latenceMaximaleMs());
             sommeScoresPonderes += score * 0.30;
             sommePoids += 0.30;
         }
@@ -241,8 +259,11 @@ public class AnpticStatusService {
         }
 
         double scoreFinal = sommeScoresPonderes / sommePoids;
-        if (scoreFinal >= 0.9) return new QualiteReseau("Excellente", "OK");
-        if (scoreFinal >= 0.7) return new QualiteReseau("Bonne", "OK");
+        boolean debitSousMinimum = (debitMontantMbps != null && debitMontantMbps < seuils.debitMinimalMbps())
+                || (debitDescendantMbps != null && debitDescendantMbps < seuils.debitMinimalMbps());
+
+        if (scoreFinal >= 0.9) return debitSousMinimum ? new QualiteReseau("Dégradée", "WARN") : new QualiteReseau("Excellente", "OK");
+        if (scoreFinal >= 0.7) return debitSousMinimum ? new QualiteReseau("Dégradée", "WARN") : new QualiteReseau("Bonne", "OK");
         if (scoreFinal >= 0.4) return new QualiteReseau("Dégradée", "WARN");
         return new QualiteReseau("Mauvaise", "KO");
     }
