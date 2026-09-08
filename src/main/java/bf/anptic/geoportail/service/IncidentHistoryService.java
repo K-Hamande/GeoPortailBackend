@@ -39,10 +39,14 @@ public class IncidentHistoryService {
 
     // A appeler periodiquement (voir IncidentAlertScheduler, qui porte le
     // @Scheduled - un seul point d'appel pour eviter d'interroger NetXMS
-    // deux fois en parallele). Retourne uniquement les incidents qui
-    // viennent d'OUVRIR un nouvel enregistrement a cet appel precis.
+    // deux fois en parallele). Retourne a la fois les incidents qui
+    // viennent d'OUVRIR un nouvel enregistrement (nouveaux) et ceux qui
+    // viennent de se refermer (resolus) a cet appel precis - les deux
+    // alimentent les notifications (email + push, cf. IncidentAlertScheduler
+    // et les reglages notifPanneAnptic/notifPanneLan/notifRetablissement de
+    // SiteSupervisionSettings).
     @Transactional
-    public List<IncidentDto> detecterEtEnregistrer() {
+    public DetectionResultat detecterEtEnregistrer() {
         List<IncidentDto> actifs = incidentService.listIncidents();
         Set<String> clesActives = actifs.stream().map(IncidentDto::id).collect(Collectors.toSet());
         List<IncidentDto> nouveaux = new ArrayList<>();
@@ -75,15 +79,19 @@ public class IncidentHistoryService {
         }
 
         Instant maintenant = Instant.now();
+        List<IncidentHistorique> resolus = new ArrayList<>();
         for (IncidentHistorique ouvert : repository.findAllByFinLeIsNull()) {
             if (!clesActives.contains(ouvert.getIncidentKey())) {
                 ouvert.setFinLe(maintenant);
                 repository.save(ouvert);
+                resolus.add(ouvert);
             }
         }
 
-        return nouveaux;
+        return new DetectionResultat(nouveaux, resolus);
     }
+
+    public record DetectionResultat(List<IncidentDto> nouveaux, List<IncidentHistorique> resolus) {}
 
     // Pour la page Backoffice "Historique des incidents" : filtres
     // (fenetre de dates, type, etat, ministere, recherche texte),

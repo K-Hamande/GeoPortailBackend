@@ -22,8 +22,8 @@ public class AdminNotificationController {
         return notificationService.listTokens(siteId);
     }
 
-    @DeleteMapping("/{token}")
-    public void deleteToken(@PathVariable String token, Authentication authentication) {
-        notificationService.deleteToken(token, authentication.getName());
+    @DeleteMapping("/{id}")
+    public void deleteToken(@PathVariable Long id, Authentication authentication) {
+        notificationService.deleteToken(id, authentication.getName());
     }
 }

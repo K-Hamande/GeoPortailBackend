@@ -1,6 +1,7 @@
 package bf.anptic.geoportail.service;
 
 import bf.anptic.geoportail.dto.IncidentDto;
+import bf.anptic.geoportail.model.enums.LiaisonLabels;
 import bf.anptic.geoportail.model.enums.NodeStatus;
 import org.springframework.stereotype.Service;
 
@@ -38,7 +39,8 @@ public class IncidentService {
                         ville,
                         ministere,
                         s.anpticStatus(),
-                        "La connexion ANPTIC n'est pas disponible" + (s.anpticTechnologie() != null ? " (" + s.anpticTechnologie() + ")" : ""),
+                        "La connexion ANPTIC n'est pas disponible"
+                                + (s.anpticTechnologie() != null ? " (" + LiaisonLabels.libelle(s.anpticTechnologie()) + ")" : ""),
                         s.anpticIndisponibleDepuis() != null ? s.anpticIndisponibleDepuis() : Instant.now()
                 ));
             }

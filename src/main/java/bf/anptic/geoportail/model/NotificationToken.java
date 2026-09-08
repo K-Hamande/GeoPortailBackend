@@ -4,11 +4,16 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
-// Destinataire enregistre pour les notifications push d'un site
-// (§3.2.6b : "enregistrement et suppression des tokens de notification
-// par site et par profil utilisateur").
+// Abonnement Web Push d'un decideur pour un site (§3.2.6b : "enregistrement
+// et suppression des tokens de notification par site et par profil
+// utilisateur"). Le decideur etant un site web (pas une appli mobile
+// native), l'abonnement suit le format standard PushSubscription du
+// navigateur : une URL d'endpoint (propre au navigateur/appareil) plus
+// deux cles de chiffrement (p256dh, auth) exigees par le protocole Web
+// Push (RFC 8291) pour chiffrer la charge utile envoyee par le serveur.
 @Entity
-@Table(name = "notification_tokens", schema = "geoportail_resina")
+@Table(name = "notification_tokens", schema = "geoportail_resina",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"site_id", "endpoint"}))
 public class NotificationToken {
 
     @Id
@@ -21,10 +26,11 @@ public class NotificationToken {
 
     private String profil;       // ex: "Ministre", "Protocole"
 
-    private String plateforme;   // "ANDROID" ou "IOS"
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String endpoint;     // URL d'envoi propre au navigateur (ex: fcm.googleapis.com/... pour Chrome)
 
-    @Column(unique = true)
-    private String token;        // identifiant fourni par le systeme de notification du telephone
+    private String p256dh;       // cle publique du navigateur, pour le chiffrement du message
+    private String auth;         // secret d'authentification du navigateur
 
     private Boolean actif;
 
@@ -56,20 +62,28 @@ public class NotificationToken {
         this.profil = profil;
     }
 
-    public String getPlateforme() {
-        return plateforme;
+    public String getEndpoint() {
+        return endpoint;
     }
 
-    public void setPlateforme(String plateforme) {
-        this.plateforme = plateforme;
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
     }
 
-    public String getToken() {
-        return token;
+    public String getP256dh() {
+        return p256dh;
     }
 
-    public void setToken(String token) {
-        this.token = token;
+    public void setP256dh(String p256dh) {
+        this.p256dh = p256dh;
+    }
+
+    public String getAuth() {
+        return auth;
+    }
+
+    public void setAuth(String auth) {
+        this.auth = auth;
     }
 
     public Boolean getActif() {

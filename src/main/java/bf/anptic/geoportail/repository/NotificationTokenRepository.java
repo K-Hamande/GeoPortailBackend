@@ -10,10 +10,5 @@ public interface NotificationTokenRepository extends JpaRepository<NotificationT
 
     List<NotificationToken> findBySite_SiteIdAndActifTrue(String siteId);
 
-    Optional<NotificationToken> findByToken(String token);
-
-    void deleteByToken(String token);
-
-
-    
+    Optional<NotificationToken> findBySite_SiteIdAndEndpoint(String siteId, String endpoint);
 }

@@ -2,7 +2,9 @@ package bf.anptic.geoportail.service;
 
 import bf.anptic.geoportail.dto.IncidentDto;
 import bf.anptic.geoportail.model.DecideurUser;
+import bf.anptic.geoportail.model.IncidentHistorique;
 import bf.anptic.geoportail.repository.DecideurUserRepository;
+import bf.anptic.geoportail.service.backoffice.AdminSupervisionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,13 +16,18 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Surveille periodiquement les incidents actifs et declenche un email
- * d'alerte des qu'un NOUVEL incident apparait, vers deux destinations :
- *   1) le destinataire unique configure (resina.alertes.email-destinataire),
- *      toujours notifie quel que soit le site ;
- *   2) les comptes decideurs (role DECIDEUR, actifs, avec un email renseigne)
- *      dont le ministere correspond au ministere proprietaire du site touche,
- *      et qui ont eux-memes active la reception des alertes email.
+ * Surveille periodiquement les incidents actifs et declenche une alerte
+ * (email + notification push) des qu'un NOUVEL incident apparait ou
+ * qu'un incident se RESOUT, vers deux destinations :
+ *   1) le destinataire email unique configure (resina.alertes.email-destinataire),
+ *      toujours notifie quel que soit le site (email uniquement, comportement
+ *      historique inchange) ;
+ *   2) les abonnes push (NotificationToken) et comptes decideurs du site/
+ *      ministere concerne, chacun filtre par les reglages de notification
+ *      du site (SiteSupervisionSettings : notificationsActives,
+ *      notifPanneAnptic, notifPanneLan, notifRetablissement - §3.2.6b du
+ *      CDC, enfin consommes ici plutot que d'etre de simples reglages sans
+ *      effet cote Backoffice).
  *
  * La detection "nouvel incident vs deja connu" est deleguee a
  * IncidentHistoryService, qui persiste chaque incident dans la table
@@ -30,13 +37,8 @@ import java.util.Set;
  * fois en parallele.
  *
  * Important : la mise a jour de l'historique tourne TOUJOURS (meme si
- * resina.alertes.enabled=false), seul l'ENVOI d'email est conditionne par
- * ce reglage. Avant cette version, la detection "deja notifie" reposait
- * sur un simple Set en memoire, remis a zero a chaque redemarrage du
- * serveur - ce qui provoquait un nouvel envoi d'email pour des pannes deja
- * actives avant le redemarrage. S'appuyer sur la table d'historique
- * (persistante) corrige ce defaut : un incident deja ouvert en base avant
- * le redemarrage n'est jamais traite comme "nouveau".
+ * resina.alertes.enabled=false), seul l'ENVOI d'alerte est conditionne par
+ * ce reglage.
  */
 @Component
 public class IncidentAlertScheduler {
@@ -45,6 +47,8 @@ public class IncidentAlertScheduler {
 
     private final IncidentHistoryService incidentHistoryService;
     private final AlertEmailService alertEmailService;
+    private final PushNotificationService pushNotificationService;
+    private final AdminSupervisionService supervisionService;
     private final DecideurUserRepository decideurUserRepository;
 
     @Value("${resina.alertes.enabled:true}")
@@ -52,9 +56,13 @@ public class IncidentAlertScheduler {
 
     public IncidentAlertScheduler(IncidentHistoryService incidentHistoryService,
                                    AlertEmailService alertEmailService,
+                                   PushNotificationService pushNotificationService,
+                                   AdminSupervisionService supervisionService,
                                    DecideurUserRepository decideurUserRepository) {
         this.incidentHistoryService = incidentHistoryService;
         this.alertEmailService = alertEmailService;
+        this.pushNotificationService = pushNotificationService;
+        this.supervisionService = supervisionService;
         this.decideurUserRepository = decideurUserRepository;
     }
 
@@ -62,41 +70,89 @@ public class IncidentAlertScheduler {
     public void verifierIncidents() {
         try {
             // Toujours execute : alimente l'historique persistant, meme si
-            // l'envoi d'email est desactive juste en dessous.
-            List<IncidentDto> nouveaux = incidentHistoryService.detecterEtEnregistrer();
+            // l'envoi d'alerte est desactive juste en dessous.
+            IncidentHistoryService.DetectionResultat resultat = incidentHistoryService.detecterEtEnregistrer();
 
-            if (!alertesActivees || nouveaux.isEmpty()) {
+            if (!alertesActivees) {
                 return;
             }
 
-            for (IncidentDto incident : nouveaux) {
-                log.info("Nouvel incident detecte, envoi d'une alerte email : {}", incident.id());
+            for (IncidentDto incident : resultat.nouveaux()) {
+                log.info("Nouvel incident detecte, envoi d'une alerte : {}", incident.id());
+                traiterNouvelIncident(incident);
+            }
 
-                // 1) Destinataire unique historique (tous sites confondus).
-                alertEmailService.envoyerAlerteNouvelIncident(incident);
-
-                // 2) Decideurs du ministere proprietaire du site concerne.
-                if (incident.ministere() != null && !incident.ministere().isBlank()) {
-                    List<DecideurUser> decideurs = decideurUserRepository
-                            .findByMinistereAndRoleAndActifTrue(incident.ministere(), DecideurUser.Role.DECIDEUR);
-
-                    Set<String> emailsDejaEnvoyes = new HashSet<>();
-                    for (DecideurUser decideur : decideurs) {
-                        // Le decideur doit avoir explicitement active les alertes
-                        // email de son cote (page "Alertes") - sinon il ne
-                        // recoit rien, meme avec un email renseigne.
-                        if (!Boolean.TRUE.equals(decideur.getAlertesActivees())) {
-                            continue;
-                        }
-                        String email = decideur.getEmail();
-                        if (email != null && !email.isBlank() && emailsDejaEnvoyes.add(email)) {
-                            alertEmailService.envoyerAlerteADecideur(email, incident);
-                        }
-                    }
-                }
+            for (IncidentHistorique resolu : resultat.resolus()) {
+                log.info("Incident resolu, envoi d'une alerte de retablissement : {}", resolu.getIncidentKey());
+                traiterIncidentResolu(resolu);
             }
         } catch (Exception e) {
-            log.error("Echec de la verification des incidents pour alerte email", e);
+            log.error("Echec de la verification des incidents pour alerte", e);
         }
+    }
+
+    private void traiterNouvelIncident(IncidentDto incident) {
+        // 1) Destinataire email unique historique (tous sites confondus) -
+        // comportement inchange, ne depend pas des reglages par site.
+        alertEmailService.envoyerAlerteNouvelIncident(incident);
+
+        // 2) Decideurs du ministere proprietaire du site concerne (email).
+        if (incident.ministere() != null && !incident.ministere().isBlank()) {
+            Set<String> emailsDejaEnvoyes = new HashSet<>();
+            for (DecideurUser decideur : decideursDuMinistere(incident.ministere())) {
+                if (!Boolean.TRUE.equals(decideur.getAlertesActivees())) {
+                    continue;
+                }
+                String email = decideur.getEmail();
+                if (email != null && !email.isBlank() && emailsDejaEnvoyes.add(email)) {
+                    alertEmailService.envoyerAlerteADecideur(email, incident);
+                }
+            }
+        }
+
+        // 3) Notification push aux abonnes du site, si ce type de panne
+        // est active pour ce site (defaut : active).
+        if (notifActivee(incident.siteId(), incident.type())) {
+            pushNotificationService.envoyerAuSite(
+                    incident.siteId(),
+                    "⚠ Incident " + incident.type() + " — " + incident.siteNom(),
+                    incident.message(),
+                    "/"
+            );
+        }
+    }
+
+    private void traiterIncidentResolu(IncidentHistorique resolu) {
+        if (!notifActivee(resolu.getSiteId(), "RETABLISSEMENT")) {
+            return;
+        }
+        pushNotificationService.envoyerAuSite(
+                resolu.getSiteId(),
+                "✓ Rétabli — " + resolu.getSiteNom(),
+                "La connexion " + resolu.getType() + " est de nouveau disponible.",
+                "/"
+        );
+    }
+
+    private List<DecideurUser> decideursDuMinistere(String ministere) {
+        return decideurUserRepository.findByMinistereAndRoleAndActifTrue(ministere, DecideurUser.Role.DECIDEUR);
+    }
+
+    // §3.2.6b : notificationsActives (interrupteur general du site) ET le
+    // reglage specifique au type d'evenement doivent tous les deux etre
+    // actifs. Les deux sont a TRUE par defaut (AdminSupervisionService)
+    // pour un site non personnalise, donc un site jamais configure recoit
+    // ses notifications comme avant ce changement.
+    private boolean notifActivee(String siteId, String typeEvenement) {
+        var settings = supervisionService.getReglagesNotification(siteId);
+        if (!settings.notificationsActives()) {
+            return false;
+        }
+        return switch (typeEvenement) {
+            case "ANPTIC" -> settings.notifPanneAnptic();
+            case "LAN" -> settings.notifPanneLan();
+            case "RETABLISSEMENT" -> settings.notifRetablissement();
+            default -> true;
+        };
     }
 }

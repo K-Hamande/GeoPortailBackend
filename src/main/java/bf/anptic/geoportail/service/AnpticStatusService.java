@@ -2,6 +2,7 @@ package bf.anptic.geoportail.service;
 
 import bf.anptic.geoportail.dto.AnpticStatusDto;
 import bf.anptic.geoportail.model.Site;
+import bf.anptic.geoportail.model.enums.LiaisonLabels;
 import bf.anptic.geoportail.model.enums.NodeStatus;
 import bf.anptic.geoportail.repository.SiteRepository;
 import bf.anptic.geoportail.service.backoffice.AdminSupervisionService;
@@ -184,7 +185,7 @@ public class AnpticStatusService {
                     "La connexion ANPTIC est disponible",
                     debitMontant,
                     debitDescendant,
-                    equipement.technologie(),
+                    LiaisonLabels.libelle(equipement.technologie()),
                     qualite != null ? qualite.label() : null,
                     qualite != null ? qualite.niveau() : null,
                     latenceMs,
@@ -203,7 +204,7 @@ public class AnpticStatusService {
                     "La connexion ANPTIC n'est pas disponible",
                     null,
                     null,
-                    equipement.technologie(),
+                    LiaisonLabels.libelle(equipement.technologie()),
                     null,
                     null,
                     null,

@@ -49,6 +49,15 @@ spring:
 
 resina:
   message: "Configuration de base (aucun profil specifique)"
+  # Notifications push (Web Push, RFC 8291/8292). Cles VAPID a generer UNE
+  # SEULE FOIS par environnement (`npx web-push generate-vapid-keys`) et a
+  # fournir via variables d'environnement - laissees vides ici, le service
+  # se desactive proprement (log d'avertissement) tant qu'elles ne le sont
+  # pas, cf. PushNotificationService.
+  web-push:
+    public-key: ${RESINA_WEB_PUSH_PUBLIC_KEY:}
+    private-key: ${RESINA_WEB_PUSH_PRIVATE_KEY:}
+    subject: ${RESINA_WEB_PUSH_SUBJECT:mailto:noc@anptic.bf}
   netxms-sync:
     enabled: true
     sites-cron: "0 0 2 * * *"

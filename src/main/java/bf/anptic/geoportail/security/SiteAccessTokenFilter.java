@@ -30,9 +30,11 @@ public class SiteAccessTokenFilter extends OncePerRequestFilter {
 
         String uri = request.getRequestURI();
 
-        // Endpoints publics : login, healthcheck (monitoring, sans JWT) +
-        // tout ce qui n'est pas /api/v1
-        if (!uri.startsWith("/api/v1") || uri.startsWith("/api/v1/auth") || uri.equals("/api/v1/health")) {
+        // Endpoints publics : login, healthcheck (monitoring, sans JWT),
+        // cle VAPID publique (necessaire avant meme l'inscription push,
+        // donc avant tout JWT utilisable) + tout ce qui n'est pas /api/v1
+        if (!uri.startsWith("/api/v1") || uri.startsWith("/api/v1/auth")
+                || uri.equals("/api/v1/health") || uri.equals("/api/v1/push/public-key")) {
             chain.doFilter(request, response);
             return;
         }

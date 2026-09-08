@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
@@ -32,19 +33,25 @@ public class NotificationService {
         this.auditService = auditService;
     }
 
-    // Cote DECIDEUR : enregistrement d'un token, action "libre" (pas
-    // d'authentification Backoffice), pas d'audit non plus - ce n'est
-    // pas une action d'administration, juste un abonnement utilisateur.
+    // Cote DECIDEUR : enregistrement d'un abonnement Web Push, action
+    // "libre" (pas d'authentification Backoffice), pas d'audit non plus -
+    // ce n'est pas une action d'administration, juste un abonnement
+    // utilisateur. Un meme navigateur peut re-declencher l'abonnement
+    // (ex: apres un refresh de page) : on met a jour la ligne existante
+    // plutot que d'en creer une nouvelle en doublon (l'endpoint est unique).
     public void registerToken(String siteId, RegisterTokenRequest request) {
         Site site = siteRepository.findById(siteId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Site introuvable : " + siteId));
 
-        NotificationToken entry = new NotificationToken();
+        NotificationToken entry = notificationTokenRepository.findBySite_SiteIdAndEndpoint(siteId, request.endpoint())
+                .orElseGet(NotificationToken::new);
+
         entry.setSite(site);
         entry.setProfil(request.profil());
-        entry.setPlateforme(request.plateforme());
-        entry.setToken(request.token());
+        entry.setEndpoint(request.endpoint());
+        entry.setP256dh(request.keys() != null ? request.keys().p256dh() : null);
+        entry.setAuth(request.keys() != null ? request.keys().auth() : null);
         entry.setActif(true);
         entry.setEnregistreLe(Instant.now());
 
@@ -65,7 +72,7 @@ public class NotificationService {
                 .filter(t -> {
                     boolean valide = t.getSite() != null;
                     if (!valide) {
-                        log.warn("Token de notification orphelin ignore (id={}, site absent)", t.getId());
+                        log.warn("Abonnement push orphelin ignore (id={}, site absent)", t.getId());
                     }
                     return valide;
                 })
@@ -74,9 +81,9 @@ public class NotificationService {
     }
 
     // Cote BACKOFFICE : suppression manuelle (§3.2.6b), avec audit cette fois
-    public void deleteToken(String token, String auteur) {
-        notificationTokenRepository.deleteByToken(token);
-        auditService.record(auteur, "Suppression token push", "token se terminant par ..." + lastFour(token));
+    public void deleteToken(Long id, String auteur) {
+        notificationTokenRepository.deleteById(id);
+        auditService.record(auteur, "Suppression abonnement push", "id=" + id);
     }
 
     private NotificationTokenResponse toResponse(NotificationToken t) {
@@ -85,17 +92,20 @@ public class NotificationService {
                 t.getSite().getSiteId(),
                 t.getSite().getNom(),
                 t.getProfil(),
-                t.getPlateforme(),
-                lastFour(t.getToken()),
+                maskEndpoint(t.getEndpoint()),
                 t.getActif(),
                 t.getEnregistreLe()
         );
     }
 
-    private static String lastFour(String token) {
-        if (token == null || token.length() < 4) {
-            return "****";
+    private static String maskEndpoint(String endpoint) {
+        if (endpoint == null) {
+            return "?";
         }
-        return "..." + token.substring(token.length() - 4);
+        try {
+            return URI.create(endpoint).getHost() + "/…";
+        } catch (Exception e) {
+            return "…";
+        }
     }
 }

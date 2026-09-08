@@ -107,6 +107,24 @@ public class AdminSupervisionService {
                 .orElse(new Seuils(DEFAUT_DEBIT_MINIMAL_MBPS, DEFAUT_LATENCE_MAXIMALE_MS));
     }
 
+    // Reglages de notification effectifs d'un site (defaut ou
+    // personnalises) - utilise par IncidentAlertScheduler pour que ces
+    // interrupteurs (jusque-la sans aucun effet reel) controlent
+    // effectivement l'envoi des notifications push (§3.2.6b du CDC).
+    public record ReglagesNotification(boolean notificationsActives, boolean notifPanneAnptic,
+                                        boolean notifPanneLan, boolean notifRetablissement) {}
+
+    public ReglagesNotification getReglagesNotification(String siteId) {
+        return settingsRepository.findById(siteId)
+                .map(s -> new ReglagesNotification(
+                        s.getNotificationsActives() != null ? s.getNotificationsActives() : true,
+                        s.getNotifPanneAnptic() != null ? s.getNotifPanneAnptic() : true,
+                        s.getNotifPanneLan() != null ? s.getNotifPanneLan() : true,
+                        s.getNotifRetablissement() != null ? s.getNotifRetablissement() : true
+                ))
+                .orElse(new ReglagesNotification(true, true, true, true));
+    }
+
     public void resetToDefaults(String siteId, String auteur) {
         settingsRepository.deleteById(siteId);
         auditService.record(auteur, "Réinitialisation paramètres supervision", "site=" + siteId);
