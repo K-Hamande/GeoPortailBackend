@@ -32,9 +32,13 @@ public class SiteAccessTokenFilter extends OncePerRequestFilter {
 
         // Endpoints publics : login, healthcheck (monitoring, sans JWT),
         // cle VAPID publique (necessaire avant meme l'inscription push,
-        // donc avant tout JWT utilisable) + tout ce qui n'est pas /api/v1
+        // donc avant tout JWT utilisable), vue "utilisateur lambda"
+        // (statut OK/KO simplifie, sans compte necessaire - voir
+        // SiteController#listSitesStatutSimple, aucune donnee technique
+        // ni filtrage par ministere) + tout ce qui n'est pas /api/v1
         if (!uri.startsWith("/api/v1") || uri.startsWith("/api/v1/auth")
-                || uri.equals("/api/v1/health") || uri.equals("/api/v1/push/public-key")) {
+                || uri.equals("/api/v1/health") || uri.equals("/api/v1/push/public-key")
+                || uri.equals("/api/v1/sites/statut-simple")) {
             chain.doFilter(request, response);
             return;
         }
